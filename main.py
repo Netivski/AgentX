@@ -1,4 +1,6 @@
 from dataclasses import dataclass, field
+import copy
+from typing import Callable
 
 LArray = list[list[int]]
 
@@ -41,7 +43,7 @@ class Object:
 class Agent:
     name: str
     where: Location
-    objects: list[Object] = field(init=False)
+    objects: list[object]
 
 Thing = Agent | Object
 State = dict[str, Thing]
@@ -54,23 +56,25 @@ class World:
 class PlayGroundError:
     pass
 
-def newAgent(name:str)->Agent:
+Path = tuple[str,]
+
+def newAgent(name:str) -> Agent:
     if (not name.isascii()):
         raise PlayGroundError
-    return Agent(name,Location(0,0))
+    return Agent(name,Location(0,0), [])
 
-def newObject(name:str)->Object:
+def newObject(name:str) -> Object:
     if (not name.isascii()):
         raise PlayGroundError
     return Object(name,Location(0,0))
 
-def newWorld (name:str, width: int, height: int)->World: 
+def newWorld (name:str, width: int, height: int) -> World: 
     if (not name.isascii()) or (width < 0 or width > MAX_WIDTH) or (height < 0 or height > MAX_HEIGHT):
         raise PlayGroundError
     g = Ground(name, width, height)
     return World(g, {})
 
-def setAltitude (w:World, loc: Location, width:int, height:int, alt:int)->None:
+def setAltitude (w:World, loc: Location, width:int, height:int, alt:int) -> None:
     if (loc.xpos+width > w.ground.width) or (loc.ypos+height > w.ground.height):
         raise PlayGroundError
     if (alt < 0):
@@ -80,33 +84,41 @@ def setAltitude (w:World, loc: Location, width:int, height:int, alt:int)->None:
             w.ground.space[i][j] = alt
 
 '''
-Checks if the Thing's location already exists in the dictionary.
-If it does raises a PlayGroundError
-Otherwise adds the Thing's location and a key to the dictionary and the Thing as the value
+Checks if thingA and thingB are in adjacent positions without considering diagonals
 '''
-def putThing (w:World, thing:Thing, loc:Location)-> Thing:
-    if (str(loc) in w.state.keys()):
+def isAdjacent (thingA:Thing, thingB:Thing) -> bool:
+    if (thingA.where.ypos == thingB.where.ypos):
+        if ((thingA.where.xpos+1 == thingB.where.xpos) or (thingA.where.xpos-1 == thingB.where.xpos)):
+            return True
+    if (thingA.where.xpos == thingB.where.xpos):
+        if ((thingA.where.ypos+1 == thingB.where.ypos) or (thingA.where.ypos-1 == thingB.where.ypos)):
+            return True
+    return False
+
+'''
+Checks if a Thing with the same name already exists in the world
+If it does raises a PlayGroundError
+If not adds the Thing's name and a key and its instance as the value
+'''
+def putThing (w:World, thing:Thing, loc:Location) -> Thing:
+    if (thing.name in w.state.keys()):
         raise PlayGroundError
-    w.state[str(loc)] = thing
+    for val in w.state.values():
+        if (str(loc) == str(val.where)):
+            raise PlayGroundError
+    w.state[thing.name] = thing
     thing.where = Location(loc.xpos, loc.ypos)
     return thing
 
 '''
-1. Creates a newLocation var to store the coordinates the agent is supposed to move
-based on the direction (e.g. if Up then increases y by 1)
-2. Checks if the location that changed sits inside the ground limits
-   If not returns None
-3. Checks in the state dictionary if there's a key equal to the target location
-   If there's a matching key (meaning there's a Thing there) returns None
-4. Removes from the dictionary the Agent's current location
-5. Sets the Agent location to the newLocation
-6. Adds the new Agent location as a key to the dictionary and the Agent as the value
+Creates a newLocation setting it's positions according to the supplied direction
+Validates that the newLocation falls within limits
+If it doesn't returns None
+Validates if there is another Thing in the same position
+If it is raises an exception
+If it's not creates a deep copy of the world and sets the agent to its newLocation
 '''
 def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
-    if (DEBUG):
-        print(str(ag.where))
-        print(dir)
-
     newLocation = Location(ag.where.xpos, ag.where.ypos)
     if (dir == "U"):
         newLocation.ypos += 1
@@ -126,15 +138,27 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
         newLocation.xpos += 1
         
     #Raise exception if there's a Thing in the Location the agent is moving to
-    if (str(newLocation) in w.state.keys()):
-        print("Something is there!")
-        return None
+    for val in w.state.values():
+        if (str(newLocation) == str(val.where)):
+            print("Something is there!")
+            return None
 
-    w.state.pop(str(ag.where))
-    ag.where = newLocation
-    w.state[str(ag.where)] = ag
+    newWorld = copy.deepcopy(w)
+    newWorld.state[ag.name].where = newLocation
 
-#def pickObject (w:World, ag: Agent , ob: Object)->World|None:
+'''
+Checks to see if the Agent and the Object are adjacent
+If not returns None
+If they are adjacent, creates a deep copy of the world
+In the new world remove the object and adds it to the Agent's object list
+'''
+def pickObject (w:World, ag: Agent , ob: Object)->World|None:
+    if (ob.name in w.state.keys() and isAdjacent(ag, ob)):
+        newWorld = copy.deepcopy(w)
+        newWorld.state[ag.name].objects.append(newWorld.state.pop(ob.name))
+        return newWorld
+    return None
+
 #def pathToWorlds (w:World, path: Path) -> list [World]: 
 #def findGoal (w:World, goal:Callable [[State],bool])->Path:
 
@@ -143,6 +167,8 @@ Print the world in the console
 If the cell is an Agent prints an 'A'
 If it's an Object prints an 'X'
 Otherwise prints the altitude of the cell
+
+TODO: Needs to be updated because it's not listing Things
 '''
 def PrintWorld(w: World):
     print()
@@ -164,6 +190,7 @@ def PrintWorld(w: World):
 DEBUG = False
 
 w = newWorld("Earth",6, 6)
+
 setAltitude(w, Location(1, 1), 3, 3, 9)
 
 a = newAgent("Ze")
@@ -172,12 +199,25 @@ o = newObject("Maria")
 
 putThing(w, a, Location(2,3))
 putThing(w, b, Location(0,0))
-putThing(w, o, Location(5,5))
+putThing(w, o, Location(1,1))
+
 
 PrintWorld(w)
+if (pickObject(w, b, o) == None):
+    print("Nothing to pick!")
+PrintWorld(w)
+moveAgent(w, b, "U")
+PrintWorld(w)
+if (pickObject(w, b, o) != None):
+    print("Picked something!")
+PrintWorld(w)
 
+exit(0)
 for i in range(0,6):
     moveAgent(w, b, "U")
     moveAgent(w, b, "R")
     PrintWorld(w)
 
+
+x = Location(2,3)
+print (x)
