@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
-import copy
 from typing import Callable
+from typing import TypeVar
+
 
 LArray = list[list[int]]
 
@@ -57,6 +58,23 @@ class PlayGroundError:
     pass
 
 Path = tuple[str,]
+
+def copyWorld(src: World) -> World:
+        w = newWorld(src.ground.name, src.ground.width, src.ground.height)
+        for thing in src.state.values():
+            if (isinstance(thing, Agent)):
+                agent = newAgent(thing.name)
+                agent.where = Location(thing.where.xpos, thing.where.ypos)
+                for agObj in thing.objects:
+                    o = newObject(agObj.name)
+                    o.where = Location(agObj.where.xpos, agObj.where.ypos)
+                    agent.objects.append(o)
+                w.state[agent.name] = agent
+            elif (isinstance(thing, Object)):
+                obj = newObject(thing.name)
+                obj.where = Location(thing.where.xpos, thing.where.ypos)
+                w.state[obj.name] = obj
+        return w
 
 def newAgent(name:str) -> Agent:
     if (not name.isascii()):
@@ -143,7 +161,8 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
             print("Something is there!")
             return None
 
-    newWorld = copy.deepcopy(w)
+    #newWorld = copy.deepcopy(w)
+    newWorld = copyWorld(w)
     newWorld.state[ag.name].where = newLocation
 
 '''
@@ -154,7 +173,8 @@ In the new world remove the object and adds it to the Agent's object list
 '''
 def pickObject (w:World, ag: Agent , ob: Object)->World|None:
     if (ob.name in w.state.keys() and isAdjacent(ag, ob)):
-        newWorld = copy.deepcopy(w)
+        #newWorld = copy.deepcopy(w)
+        newWorld = copyWorld(w)
         newWorld.state[ag.name].objects.append(newWorld.state.pop(ob.name))
         return newWorld
     return None
