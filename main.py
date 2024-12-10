@@ -54,7 +54,7 @@ class World:
     ground: Ground
     state: State
 
-class PlayGroundError:
+class PlayGroundError(Exception):
     pass
 
 Path = tuple[str,]
@@ -87,7 +87,9 @@ def newObject(name:str) -> Object:
     return Object(name,Location(0,0))
 
 def newWorld (name:str, width: int, height: int) -> World: 
-    if (not name.isascii()) or (width < 0 or width > MAX_WIDTH) or (height < 0 or height > MAX_HEIGHT):
+    if (not name.isascii()) or (len(name) == 0):
+        raise PlayGroundError
+    if (width < 0 or width > MAX_WIDTH) or (height < 0 or height > MAX_HEIGHT) or (height == 0 and width == 0):
         raise PlayGroundError
     g = Ground(name, width, height)
     return World(g, {})
@@ -95,11 +97,13 @@ def newWorld (name:str, width: int, height: int) -> World:
 def setAltitude (w:World, loc: Location, width:int, height:int, alt:int) -> None:
     if (loc.xpos+width > w.ground.width) or (loc.ypos+height > w.ground.height):
         raise PlayGroundError
+    if (loc.xpos < 0) or (loc.ypos < 0):
+        raise PlayGroundError
     if (alt < 0):
         raise PlayGroundError
     for i in range(loc.ypos, loc.ypos+height):
         for j in range(loc.xpos, loc.xpos+width):
-            w.ground.space[i][j] = alt
+            w.ground.space[j][i] = alt
 
 '''
 Checks if thingA and thingB are in adjacent positions without considering diagonals
@@ -140,20 +144,20 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
     newLocation = Location(ag.where.xpos, ag.where.ypos)
     if (dir == "U"):
         newLocation.ypos += 1
-        if (newLocation.ypos >= w.ground.height - 1):
+        if (newLocation.ypos >= w.ground.height):
             return None
     elif (dir == "D"):
         newLocation.ypos -= 1
-        if (newLocation.ypos - 1 < 0):
+        if (newLocation.ypos < 0):
             return None
     elif (dir == "L"):
         newLocation.xpos -= 1
-        if (newLocation.xpos - 1 < 0):
+        if (newLocation.xpos < 0):
             return None
     elif (dir == "R"):
-        if (newLocation.xpos + 1 >= w.ground.width):
-            return None
         newLocation.xpos += 1
+        if (newLocation.xpos >= w.ground.width):
+            return None
         
     #Raise exception if there's a Thing in the Location the agent is moving to
     for val in w.state.values():
@@ -164,6 +168,7 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
     #newWorld = copy.deepcopy(w)
     newWorld = copyWorld(w)
     newWorld.state[ag.name].where = newLocation
+    return newWorld
 
 '''
 Checks to see if the Agent and the Object are adjacent
@@ -208,7 +213,7 @@ def PrintWorld(w: World):
     
 # ------------------------------------------
 DEBUG = False
-
+'''
 w = newWorld("Earth",6, 6)
 
 setAltitude(w, Location(1, 1), 3, 3, 9)
@@ -241,3 +246,11 @@ for i in range(0,6):
 
 x = Location(2,3)
 print (x)
+'''
+
+def compat(sa:str, sb:str) -> (str|None):
+    startIndex = len(sb)-len(sa)
+    for i in range(startIndex, len(sb)):
+        if (sa.startswith(sb[i:])):
+            return sb[i:]
+    return None
