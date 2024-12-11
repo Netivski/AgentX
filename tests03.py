@@ -170,6 +170,12 @@ class newSetAltitude(unittest.TestCase):
         setAltitude(w,Location(1,1),2,1,3)
         t = [[0,0,0],[0,3,0],[0,3,0]] 
         self.assertTrue(w.ground.space==t)
+        
+        '''
+        w = |0 0 0|   expected = |0 0 0|  
+            |0 3 3|              |0 3 0|
+            |0 0 0|              |0 3 0|
+        '''
 
     def test_setAltitude_4(self)->None:
         n ="playG0"
@@ -878,4 +884,3 @@ def g77(ths:State)->bool:
 
 if __name__ == '__main__':
     unittest.main(failfast=True)
-
