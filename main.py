@@ -328,6 +328,3 @@ Testing area
 
 # x = Location(2,3)
 # print (x)
-
-
-
