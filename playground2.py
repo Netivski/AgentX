@@ -1,8 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Callable
+from typing import cast
 from collections import deque
 
+@dataclass
+class Location:
+    xpos: int
+    ypos: int
+
 LArray = list[list[int]]
+BoolGrid = list[list[bool]]
+LocationGrid = list[list[Location]]
 
 MAX_WIDTH = 50
 MAX_HEIGHT = 50
@@ -13,21 +21,16 @@ class Ground:
     width: int
     height: int
     space: LArray
-
-    def initGround(self):
-        self.space = [[0 for _ in range(self.height)] for _ in range(self.width)]
+    wings: BoolGrid
+    wormHoles: LocationGrid
 
     def __init__(self, name:str, width:int, height:int):
         self.name = name
         self.width = width
         self.height = height
-        self.space = LArray()
-        self.initGround()
-
-@dataclass
-class Location:
-    xpos: int
-    ypos: int
+        self.space = [[0 for _ in range(self.height)] for _ in range(self.width)]
+        self.wings = [[False for _ in range(self.height)] for _ in range(self.width)]
+        self.wormHoles = [[None for _ in range(self.height)] for _ in range(self.width)]
 
 @dataclass
 class Object:
@@ -103,15 +106,41 @@ def newWorld (name:str, width: int, height: int) -> World:
     return World(g, {})
 
 def setAltitude (w:World, loc: Location, width:int, height:int, alt:int) -> None:
-    if (loc.xpos+width > w.ground.width) or (loc.ypos+height > w.ground.height):
-        raise PlayGroundError
-    if (loc.xpos < 0) or (loc.ypos < 0):
+    if (not(checkBounds(w, Location(loc.xpos+width-1, loc.ypos+height-1)))):
         raise PlayGroundError
     if (alt < 0):
         raise PlayGroundError
     for i in range(loc.xpos, loc.xpos+width):
         for j in range(loc.ypos, loc.ypos+height):
             w.ground.space[i][j] = alt
+
+def setComWing (w:World, loc: Location, width:int, height:int) -> None:
+    if (not(checkBounds(w, Location(loc.xpos+width-1, loc.ypos+height-1)))):
+        raise PlayGroundError
+    for i in range(loc.xpos, loc.xpos+width):
+        for j in range(loc.ypos, loc.ypos+height):
+            w.ground.wings[i][j] = True
+
+def setWormhole(w:World, loc1:Location, loc2:Location) -> None:
+    # Ensure wormhole ends are at least 2 positions apart
+    if (abs(loc1.xpos-loc2.xpos) < 2 or abs(loc1.ypos-loc2.ypos) < 2):
+        raise PlayGroundError
+    
+    # Ensure wormhole ends are not adjacent to any other wormhole
+    for dir in directions.values():
+        for locToCheck in [Location(loc1.xpos + dir.xpos, loc1.ypos + dir.ypos), Location(loc2.xpos + dir.xpos, loc2.ypos + dir.ypos)]:
+            if (checkBounds(w, locToCheck) and w.ground.wormHoles[locToCheck.xpos][locToCheck.ypos] != None):
+                raise PlayGroundError
+    
+    # Ensure wormhole ends don't land on any agent or object
+    for thing in w.state.values():
+        if (thing.where == loc1 or thing.where == loc2):
+            raise PlayGroundError
+    
+    # Add ends of the wormhole to the grid
+    w.ground.wormHoles[loc1.xpos][loc1.ypos] = loc2
+    w.ground.wormHoles[loc2.xpos][loc2.ypos] = loc1
+
 
 '''
 Checks if thingA and thingB are adjacent
@@ -161,12 +190,18 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
 
     if not(checkBounds(w, newLocation)):
         return None
-    if (checkAltDiff(w, newLocation, ag.initialLocation) > (len(ag.objects))):
+
+    if (w.ground.wormHoles[newLocation.xpos][newLocation.ypos] != None):
+        whEnd = w.ground.wormHoles[newLocation.xpos][newLocation.ypos]
+        newLocation = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
+
+    if not(checkBounds(w, newLocation)) or (checkAltDiff(w, newLocation, ag.initialLocation) > (len(ag.objects))):
         return None
     
-    for val in w.state.values():
-        if (newLocation == val.where):
-            raise PlayGroundError()
+    if not(w.ground.wings[newLocation.xpos][newLocation.ypos]):
+        for val in w.state.values():
+            if (newLocation == val.where):
+                raise PlayGroundError()
 
     newWorld = copyWorld(w)
     newWorld.state[ag.name].where = newLocation
@@ -286,6 +321,10 @@ def PrintWorld(w: World):
                     print("A", end="")
                 else:
                     print("X", end="")
+            elif (w.ground.wormHoles[currLoc.xpos][currLoc.ypos] != None):
+                print("W", end="")
+            elif (w.ground.wings[currLoc.xpos][currLoc.ypos]):
+                print(".", end="")
             else:
                 print (w.ground.space[row][col], end="")
         print()
@@ -294,26 +333,36 @@ def PrintWorld(w: World):
 '''
 Testing area
 '''
+def getAgent(w:World,n:str)->Agent:
+    return cast(Agent,w.state[n])
 
-# w:World = newWorld("S",6,6)
-# setAltitude(w,Location(1,1),2,1,3)
-# print(w.ground.space)
-# PrintWorld(w)
+def getObject(w:World,n:str)->Object:
+    return cast(Object,w.state[n])
 
-# a = newAgent("Ze")
-# b = newAgent("Quim")
-# o = newObject("Maria")
+w:World = newWorld("S",10,10)
+a = newAgent("Ze")
+b = newAgent("Quim")
+o = newObject("Maria")
 
-# putThing(w, a, Location(2,3))
-# putThing(w, b, Location(0,0))
+putThing(w, a, Location(2,3))
+putThing(w, b, Location(2,4))
 # putThing(w, o, Location(1,1))
 
+setComWing(w, Location(1,1), 8, 8)
+setWormhole(w, Location(3,4), Location(5,7))
 
-# PrintWorld(w)
+PrintWorld(w)
+wn = moveAgent(w, getAgent(w, "Quim"), "R")
+PrintWorld(wn)
+wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
+PrintWorld(wn)
+
+
+
+
 # if (pickObject(w, b, o) == None):
 #     print("Nothing to pick!")
 # PrintWorld(w)
-# moveAgent(w, b, "U")
 # PrintWorld(w)
 # if (pickObject(w, b, o) != None):
 #     print("Picked something!")
