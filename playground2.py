@@ -328,3 +328,14 @@ Testing area
 
 # x = Location(2,3)
 # print (x)
+
+# def g1(s:State)->bool:
+#     return s["R2D2"].where == Location(2,2)
+
+# w = newWorld("Playground",20,20)
+# robot1 = newAgent("R3D3")
+# robot = newAgent("R2D2")
+# putThing(w,robot1,Location(2,2))
+# putThing(w,robot,Location(0,0))
+# res = findGoal(w,g1)
+# print(res)

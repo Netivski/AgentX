@@ -1,9 +1,11 @@
-# playGroundD
-
-from dataclasses import dataclass
-from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Callable
+from collections import deque
+
 LArray = list[list[int]]
+
+MAX_WIDTH = 50
+MAX_HEIGHT = 50
 
 @dataclass
 class Ground:
@@ -11,6 +13,16 @@ class Ground:
     width: int
     height: int
     space: LArray
+
+    def initGround(self):
+        self.space = [[0 for _ in range(self.height)] for _ in range(self.width)]
+
+    def __init__(self, name:str, width:int, height:int):
+        self.name = name
+        self.width = width
+        self.height = height
+        self.space = LArray()
+        self.initGround()
 
 @dataclass
 class Location:
@@ -21,259 +33,309 @@ class Location:
 class Object:
     name: str
     where: Location
+    initialLocation: Location
 
 @dataclass
 class Agent:
     name: str
     where: Location
+    initialLocation: Location
     objects: list[object]
 
 Thing = Agent | Object
-State = dict[str,Thing]
+State = dict[str, Thing]
 
 @dataclass
 class World:
     ground: Ground
     state: State
 
-@dataclass
 class PlayGroundError(Exception):
     pass
 
-# criação de entidades básicas ahead
+Path = tuple[str,]
+
+directions = {'U':Location(0,1), 'D':Location(0,-1), 'L':Location(-1,0), 'R':Location(1,0)}
+
+# Transforms state of a world in a dictionary[str(location), Thing]
+def getStateByLocation(w: World) -> State:
+    s = dict()
+    for val in w.state.values():
+        s[str(val.where)] = val
+    return s
+
+# Creates a copy of the world and a copy of all its agents and objects, keeping the same ground
+def copyWorld(src: World) -> World:
+        w = newWorld(src.ground.name, src.ground.width, src.ground.height)
+        w.ground = src.ground
+
+        for thing in src.state.values():
+            if (isinstance(thing, Agent)):
+                newThing = newAgent(thing.name)
+                for obj in thing.objects:
+                    o = newObject(obj.name)
+                    o.where = Location(obj.where.xpos, obj.where.ypos)
+                    newThing.objects.append(o)
+            elif (isinstance(thing, Object)):
+                newThing = newObject(thing.name)
+
+            newThing.where = Location(thing.where.xpos, thing.where.ypos)
+            newThing.initialLocation = Location(thing.initialLocation.xpos, thing.initialLocation.ypos)
+            w.state[newThing.name] = newThing
+        return w
+
 def newAgent(name:str) -> Agent:
-    for i in name:
-        if not (i.isalnum() or i == "_"):
-            raise(PlayGroundError)
-    ag = Agent(name, Location(0,0), [])
-    return(ag)
+    if (not name.replace("_", "").isalnum()) or (len(name) == 0):
+        raise PlayGroundError
+    return Agent(name,Location(0,0), None, [])
 
 def newObject(name:str) -> Object:
-    for ch in name:
-            if not (ch.isalnum() or ch == "_"):
-                raise(PlayGroundError)
-    ob = Object(name, Location(0,0))
-    return(ob)
+    if (not name.replace("_", "").isalnum()) or (len(name) == 0):
+        raise PlayGroundError
+    return Object(name,Location(0,0), None)
 
-def newWorld(name:str, width:int, height:int) -> World:
-    for ch in name:
-        if not (ch.isalnum() or ch == "_"):
-            raise(PlayGroundError)
-    if name == "":
-        raise(PlayGroundError)
-    if (width <= 0 or height <= 0):
-        raise(PlayGroundError)
-    matriz = matrix(LArray, width, height)
-    g = Ground(name, width, height, matriz)
+def newWorld (name:str, width: int, height: int) -> World: 
+    if (not name.replace("_", "").isalnum()) or (len(name) == 0):
+        raise PlayGroundError
+    if (width < 0 or width > MAX_WIDTH) or (height < 0 or height > MAX_HEIGHT) or (height == 0 and width == 0):
+        raise PlayGroundError
+    g = Ground(name, width, height)
     return World(g, {})
- 
-def matrix(space: LArray, width: int, height: int):
-    space = LArray()
-    for row in range(width):
-        space.insert(row, list())
-        for col in range(height):
-            space[row].append(0)
-    return(space)
 
-def setAltitude(w:World, loc:Location, width:int, heigth:int, alt:int) -> None:
-    if (loc.xpos+width > w.ground.width) or (loc.ypos+heigth > w.ground.height):
-        raise(PlayGroundError)
+def setAltitude (w:World, loc: Location, width:int, height:int, alt:int) -> None:
+    if (loc.xpos+width > w.ground.width) or (loc.ypos+height > w.ground.height):
+        raise PlayGroundError
     if (loc.xpos < 0) or (loc.ypos < 0):
-        raise(PlayGroundError)
+        raise PlayGroundError
     if (alt < 0):
-        raise(PlayGroundError)
+        raise PlayGroundError
     for i in range(loc.xpos, loc.xpos+width):
-        for j in range(loc.ypos, loc.ypos+heigth):
+        for j in range(loc.ypos, loc.ypos+height):
             w.ground.space[i][j] = alt
 
-initialAltitude = {}
-def putThing(w:World, thing:Thing, loc:Location) -> Thing:
-    if thing.name in w.state.keys():
-        raise PlayGroundError
-    for val in w.state.values():
-        if str(loc) == str(val.where):
-            raise PlayGroundError
-    thing.where = Location(loc.xpos, loc.ypos)
-    w.state[thing.name] = thing
-    if isinstance(thing, Agent):
-        initialAltitude[thing.name] = w.ground.space[thing.where.xpos][thing.where.ypos]
-    return(thing)
-
-def stateToLocDict(w:World) -> dict[str,Thing]:
-    dicionario = dict()
-    for val in w.state.values():
-        dicionario[str(val.where)] = val
-    return dicionario
-    
-def printWorld(w:World):
-    loc_dicionario = x(w)
-    for row in range(w.ground.width-1, -1, -1):
-        for col in range(w.ground.height):
-            currLoc = Location(row, col)
-            if (str(currLoc) in loc_dicionario.keys()):
-                if (isinstance(loc_dicionario[str(currLoc)],Agent)):
-                    print("A", end=" ")
-                else:
-                    print("X", end=" ")
-            else:
-                print(w.ground.space[col][row], end=" ")
-        print()
-    print()
-
-def copyWorld(src:World) -> World:
-    w = World(src.ground, (deepcopy(src.state)))
-    #w.state = deepcopy(src.state)
-    '''for thing in w.state.values():
-        if isinstance(thing, Agent):
-            agent = newAgent(thing.name)
-            agent.where = Location(thing.where.xpos, thing.where.ypos)
-            w.state[agent.name] = agent
-            w.state[agent.name].where = agent.where
-            for agOb in thing.objects:
-                w.state[agent.name].objects = agOb
-        if isinstance(thing, Object):
-            object = newObject(thing.name)
-            object.where = Location(thing.where.xpos, thing.where.ypos)
-            w.state[object.name] = object
-            w.state[object.name] = object.where'''
-    return(w)
-
-def getAltDiff(w:World, th1:Thing, th2:Thing) -> int:
-    return abs((w.ground.space[th1.where.xpos][th1.where.ypos]) - (w.ground.space[th2.where.xpos][th2.where.ypos]))
-
-def moveAgent(w:World, ag:Agent, dir:str) -> World | None:
-    new_loc = Location(ag.where.xpos, ag.where.ypos)
-    if (dir == "L"):
-        new_loc.xpos -= 1
-        if (new_loc.xpos < 0):
-            return None
-    elif (dir == "R"):
-        new_loc.xpos += 1
-        if (new_loc.xpos > w.ground.width - 1):
-            return None
-    elif (dir == "U"):
-        new_loc.ypos += 1
-        if (new_loc.ypos > w.ground.height - 1):
-            return None
-    elif (dir == "D"):
-        new_loc.ypos -= 1
-        if (new_loc.ypos < 0):
-            return None
-    
-    for item in w.state.values():
-        if isinstance(item, object) and item.where == new_loc:
-            return None
-    
-    if abs(w.ground.space[new_loc.xpos][new_loc.ypos] - initialAltitude[ag.name]) > len(ag.objects):
-        return None
-    
-    new_w = copyWorld(w)
-    new_ag = new_w.state[ag.name]
-    new_ag.where = new_loc
-    return(new_w)
-
-def isAdjacent(thing1:Thing, thing2:Thing) -> bool:
-    if (thing1.where.ypos == thing2.where.ypos):
-        if ((thing1.where.xpos+1 == thing2.where.xpos) or (thing1.where.xpos-1 == thing2.where.xpos)):
+'''
+Checks if thingA and thingB are adjacent
+'''
+def isAdjacent (thingA:Thing, thingB:Thing) -> bool:
+    if (thingA.where.ypos == thingB.where.ypos):
+        if ((thingA.where.xpos+1 == thingB.where.xpos) or (thingA.where.xpos-1 == thingB.where.xpos)):
             return True
-    if (thing1.where.xpos == thing2.where.xpos):
-        if ((thing1.where.ypos+1 == thing2.where.ypos) or (thing1.where.ypos-1 == thing2.where.ypos)):
+    if (thingA.where.xpos == thingB.where.xpos):
+        if ((thingA.where.ypos+1 == thingB.where.ypos) or (thingA.where.ypos-1 == thingB.where.ypos)):
             return True
     return False
 
-def pickObject(w:World, ag:Agent, ob:Object) -> World | None:
-    if getAltDiff(w, ag, ob) != 0:
-        return None
-    if (ob.name in w.state.keys()) and isAdjacent(ag, ob):
-        new_w = copyWorld(w)
-        new_w.state[ag.name].objects.append(new_w.state.pop(ob.name))
-    else:
-        return None
-    return(new_w)
+'''
+Checks if a Thing with the same name already exists in the world
+If it does raises a PlayGroundError
+If not adds the Thing's name and a key and its instance as the value
+'''
+def putThing (w:World, thing:Thing, loc:Location) -> Thing:
+    if (thing.name in w.state.keys()):
+        raise PlayGroundError
+    for val in w.state.values():
+        if (str(loc) == str(val.where)):
+            raise PlayGroundError
+    w.state[thing.name] = thing
+    thing.where = Location(loc.xpos, loc.ypos)
+    thing.initialLocation = Location(loc.xpos, loc.ypos)
+    return thing
 
-Path = tuple[str,]
-def pathToWorlds(w:World, path:Path) -> World:
+def checkAltDiff(w:World, locA:Location, locB:Location):
+    return abs(w.ground.space[locA.xpos][locA.ypos] - w.ground.space[locB.xpos][locB.ypos])
+
+def checkBounds(w:World, loc:Location) -> bool:
+    if (0 <= loc.ypos < w.ground.height) and (0 <= loc.xpos < w.ground.width):
+        return True
+    return False
+
+'''
+Moves the agent in the given direction
+Defines the agent's new location based on the supplied direction
+Returns None if the new location is out of bounds
+Raises exception if there is another Thing in the same location
+Otherwise returns a copy of the world with the agent in the new location
+'''
+def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
+    newLocation = Location(ag.where.xpos + directions[dir].xpos, ag.where.ypos + directions[dir].ypos)
+
+    if not(checkBounds(w, newLocation)):
+        return None
+    if (checkAltDiff(w, newLocation, ag.initialLocation) > (len(ag.objects))):
+        return None
+    
+    for val in w.state.values():
+        if (newLocation == val.where):
+            raise PlayGroundError()
+
+    newWorld = copyWorld(w)
+    newWorld.state[ag.name].where = newLocation
+    return newWorld
+
+'''
+Orders and agent to pick an object
+Returns None if the two aren't adjacent
+Otherwise returns a copy of the world with the object aded to the Agent's object list
+'''
+def pickObject (w:World, ag: Agent , ob: Object)->World|None:
+    if (ag.name in w.state.keys() and ob.name in w.state.keys() and isAdjacent(ag, ob)):
+        if (checkAltDiff(w, ag.where, ob.where) == 0):
+            newWorld = copyWorld(w)
+            newWorld.state[ag.name].objects.append(newWorld.state.pop(ob.name))
+            return newWorld
+    return None
+
+'''
+Receives a list of commands in the form of a path and returns a list of resulting worlds
+Commands can be to move and agent in a given direction or instruct an agent to pick an object
+If a move or a pick command does not result in a possible world and exception is raised
+'''
+def pathToWorlds (w:World, path: Path) -> list [World]: 
     worlds = [w]
     currWorld = w
-    for p in path:
-        actions = p.split(" ")
-        if len(actions) == 2:
-            # checks if command valid
-            if not actions[1] in w.state.keys():
-                raise(PlayGroundError)
-            currWorld = moveAgent(currWorld, currWorld.state[actions[1]], actions[0])
-            # checks if action possible
-            if currWorld == None:
-                raise(PlayGroundError)
-            worlds.append(currWorld)
-        
-        elif len(actions) == 3:
-            # checks if command valid
-            if not actions[2] in w.state.keys():
-                raise(PlayGroundError)
-            currWorld = pickObject(currWorld, currWorld.state[actions[1]], currWorld.state[actions[2]])
-            # checks if action possible
-            if currWorld == None:
-                raise(PlayGroundError)
-            worlds.append(currWorld)
-    return(worlds)
+    try:
+        for p in path:
+            cmd = p.split(" ")
+            if (len(cmd) == 2): #In this case it's a move command
+                currWorld = moveAgent(currWorld, currWorld.state[cmd[1]], cmd[0])
+                if (currWorld == None):
+                    raise PlayGroundError()
+                worlds.append(currWorld)
+            else: #In this case it's a pick command
+                currWorld = pickObject(currWorld, currWorld.state[cmd[1]], currWorld.state[cmd[2]])
+                if (currWorld == None):
+                    raise PlayGroundError()
+                worlds.append(currWorld)
+    except:
+        raise PlayGroundError()
 
-def nextWorlds(w:World) -> list[tuple[str,World]]:
-    possibleWorlds = list()
-    for ag in w.state.values():
-        if isinstance(ag, Agent):
-            possiblePaths = ["U " + ag.name, "D " + ag.name, "L " + ag.name, "R " + ag.name]
-            for p in possiblePaths:
-                try:
-                    nWorld = pathToWorlds(w, [p])
-                    possibleWorlds.append([p, nWorld])
-                except:
-                    continue
-        for ob in w.state.values():
-            if isinstance(ob, Object):
-                if isAdjacent(ag, ob):
-                    nWorld = pickObject(w, ag, ob)
-                    if nWorld != None:
-                        possibleWorlds.append(["P "+ ag.name +" "+ ob.name, nWorld])
-    return possibleWorlds
+    return worlds
 
-def findGoal(w:World, goal:Callable[[State],bool]) -> Path:
-    toVisit: list[tuple[Location, list]] = []
-    distance:dict[str, int] = {}
-    isVisited = [[False for _ in range(0, w.ground.width)] for _ in range(0, w.ground.height)]
-    toVisitFlag = [[False for _ in range(0, w.ground.width)] for _ in range(0, w.ground.height)]
-    thingsByLoc = stateToLocDict(w)
-    
-    w = copyWorld(w)
-    
-    for ag in w.state.values():
-        if isinstance(ag, Agent):
-            start = ag.where
-    
-        toVisit.append((start, []))
-        distance [str(start)] = 0
-        isVisited[start.xpos][start.ypos] = True
-        toVisitFlag[start.xpos][start.ypos] = True
+'''
+Check if location to visit is within bounds, was not visited yet and meets altitude requirements
+'''
+def isValidMove(w:World, ag:Agent, loc:Location, visited):
+    x, y = loc.xpos, loc.ypos
+    if checkBounds(w, loc) and not visited[x][y]:
+        if checkAltDiff(w, ag.where, loc) <= (len(ag.objects)):
+            return True
+    return False
 
-        while len (toVisit) > 0:
-            tv, path = toVisit.pop(0)
-            ag.where = tv
-            
-            if goal(w.state):
+'''
+Adaptation of what ChatGPT suggested as the BFS algorithm to the domain of the assignment
+Original algorithm can be found in bfs_algorithm.pt
+'''
+def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
+    rows, cols = w.ground.height, w.ground.width
+    newWorld = copyWorld(w)
+    stateByLoc = getStateByLocation(newWorld)
+
+    for ag in newWorld.state.values():
+        if not(isinstance(ag, Agent)):
+            continue
+
+        start = Location(ag.where.xpos, ag.where.ypos)
+
+        # Create a queue for BFS and a visited array
+        queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
+        visited = [[False for _ in range(cols)] for _ in range(rows)]
+        visited[start.xpos][start.ypos] = True  # Mark the start as visited
+
+        # Perform BFS
+        while queue:
+            x, y, distance, path = queue.popleft()
+            ag.where.xpos = x
+            ag.where.ypos = y
+            # If we reached the destination, return the distance
+            if goal(newWorld.state):
                 return path
-            isVisited[tv.xpos][tv.ypos] = True
-        
-            for dir, nx, ny in [["U",0,1], ["D",0,-1], ["L",-1,0], ["R",1,0]]:
-                new_loc = Location(tv.xpos+nx, tv.ypos+ny)
-                foundObject = str(new_loc) in thingsByLoc.keys() and isinstance(thingsByLoc[str(new_loc)], Object)
-                if moveAgent(w, ag, dir) != None or foundObject:
-                    if foundObject:
-                        newPath = ["P "+ ag.name + " " + thingsByLoc[str(new_loc)].name] + [dir + " " + ag.name]
-                    else:
-                        newPath = [dir + " " + ag.name]
-                    if not (isVisited[new_loc.xpos][new_loc.ypos] or toVisitFlag[new_loc.xpos][new_loc.ypos]):
-                        toVisit.append((new_loc, path + newPath))
-                        toVisitFlag[new_loc.xpos][new_loc.ypos] = True
-                        distance[str(new_loc)] = distance[str(tv)]+1
+            
+            # Explore all 4 possible directions (up, down, left, right)
+            for key in directions.keys():
+                nx, ny = x + directions[key].xpos, y + directions[key].ypos
+                newLoc = Location(nx, ny)
+                if isValidMove(newWorld, ag, newLoc, visited):
+                    visited[nx][ny] = True  # Mark the neighbor as visited
 
-    raise(PlayGroundError)
+                    # Check to see if there's an Object in the neighbor cell
+                    if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
+                        # Path to add should instruct agent to pick object and then move 
+                        pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name] + [key + " " + ag.name]
+                    else:
+                        # Path to add should instruct agent to move 
+                        pathToAdd = [key + " " + ag.name]
+                    queue.append((nx, ny, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
+        
+        # If no path is found, raise exception
+        raise PlayGroundError()
+
+'''
+Print the world in the console
+If the cell is an Agent prints an 'A'
+If it's an Object prints an 'X'
+Otherwise prints the altitude of the cell
+'''
+def PrintWorld(w: World):
+    print()
+    s = getStateByLocation(w)
+    for col in range(w.ground.width):
+        for row in range(w.ground.height):
+            currLoc = Location(row, col)
+            if (str(currLoc) in s.keys()):
+                if (isinstance(s[str(currLoc)],Agent)):
+                    print("A", end="")
+                else:
+                    print("X", end="")
+            else:
+                print (w.ground.space[row][col], end="")
+        print()
+    return
+    
+'''
+Testing area
+'''
+
+# w:World = newWorld("S",6,6)
+# setAltitude(w,Location(1,1),2,1,3)
+# print(w.ground.space)
+# PrintWorld(w)
+
+# a = newAgent("Ze")
+# b = newAgent("Quim")
+# o = newObject("Maria")
+
+# putThing(w, a, Location(2,3))
+# putThing(w, b, Location(0,0))
+# putThing(w, o, Location(1,1))
+
+
+# PrintWorld(w)
+# if (pickObject(w, b, o) == None):
+#     print("Nothing to pick!")
+# PrintWorld(w)
+# moveAgent(w, b, "U")
+# PrintWorld(w)
+# if (pickObject(w, b, o) != None):
+#     print("Picked something!")
+# PrintWorld(w)
+
+# #exit(0)
+# for i in range(0,6):
+#     moveAgent(w, b, "U")
+#     moveAgent(w, b, "R")
+#     PrintWorld(w)
+
+
+# x = Location(2,3)
+# print (x)
+
+# def g1(s:State)->bool:
+#     return s["R2D2"].where == Location(2,2)
+
+# w = newWorld("Playground",20,20)
+# robot1 = newAgent("R3D3")
+# robot = newAgent("R2D2")
+# putThing(w,robot1,Location(2,2))
+# putThing(w,robot,Location(0,0))
+# res = findGoal(w,g1)
+# print(res)

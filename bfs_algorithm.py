@@ -3,7 +3,7 @@ BF-Search alhorithm implementation suggested by ChatGPT
 '''
 
 from collections import deque
-from main import *
+from playground1 import *
 
 # Directions for moving in the grid: [left, right, up, down]
 directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
