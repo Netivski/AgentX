@@ -286,23 +286,26 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
                 return path
             
             # Explore all 4 possible directions (up, down, left, right)
-            for key in directions.keys():
-                nx, ny = x + directions[key].xpos, y + directions[key].ypos
+            for dir in directions.keys():
+                nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
                 newLoc = Location(nx, ny)
+                if (checkBounds(w, newLoc)) and (w.ground.wormHoles[newLoc.xpos][newLoc.ypos] != None):
+                    whEnd = w.ground.wormHoles[newLoc.xpos][newLoc.ypos]
+                    newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
                 if isValidMove(newWorld, ag, newLoc, visited):
-                    visited[nx][ny] = True  # Mark the neighbor as visited
+                    visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
 
                     # Check to see if there's an Object in the neighbor cell
                     if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
                         # Path to add should instruct agent to pick object and then move 
-                        pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name] + [key + " " + ag.name]
+                        pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name] + [dir + " " + ag.name]
                     else:
                         # Path to add should instruct agent to move 
-                        pathToAdd = [key + " " + ag.name]
-                    queue.append((nx, ny, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
+                        pathToAdd = [dir + " " + ag.name]
+                    queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
         
-        # If no path is found, raise exception
-        raise PlayGroundError()
+    # If no path is found, raise exception
+    raise PlayGroundError()
 
 '''
 Print the world in the console
@@ -344,47 +347,23 @@ a = newAgent("Ze")
 b = newAgent("Quim")
 o = newObject("Maria")
 
-putThing(w, a, Location(2,3))
+putThing(w, a, Location(6,7))
 putThing(w, b, Location(2,4))
 # putThing(w, o, Location(1,1))
 
 setComWing(w, Location(1,1), 8, 8)
 setWormhole(w, Location(3,4), Location(5,7))
+setWormhole(w, Location(5,4), Location(7,7))
 
 PrintWorld(w)
 wn = moveAgent(w, getAgent(w, "Quim"), "R")
 PrintWorld(wn)
 wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
 PrintWorld(wn)
+print(getAgent(wn, "Quim").where)
 
+def g1(s:State)->bool:
+    return s["Quim"].where == Location(6,4)
 
-
-
-# if (pickObject(w, b, o) == None):
-#     print("Nothing to pick!")
-# PrintWorld(w)
-# PrintWorld(w)
-# if (pickObject(w, b, o) != None):
-#     print("Picked something!")
-# PrintWorld(w)
-
-# #exit(0)
-# for i in range(0,6):
-#     moveAgent(w, b, "U")
-#     moveAgent(w, b, "R")
-#     PrintWorld(w)
-
-
-# x = Location(2,3)
-# print (x)
-
-# def g1(s:State)->bool:
-#     return s["R2D2"].where == Location(2,2)
-
-# w = newWorld("Playground",20,20)
-# robot1 = newAgent("R3D3")
-# robot = newAgent("R2D2")
-# putThing(w,robot1,Location(2,2))
-# putThing(w,robot,Location(0,0))
-# res = findGoal(w,g1)
-# print(res)
+res = findGoal(w,g1)
+print(res)
