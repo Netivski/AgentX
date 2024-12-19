@@ -312,36 +312,47 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
     # If no path is found, raise exception
     raise PlayGroundError()
 
-
-def IsCookieFound(s:State)->bool:
-    agLoc = s["Quim"].where
-    for thing in s.values():
-        if (isinstance(thing, Object)) and (agLoc == thing.where):
-            return True
+# Checks if there's any agent that has the same location as an object
+def IsCookieFound_Goal(s:State)->bool:
+    for agent in getAgentsInState(s):
+        for object in getObjectsInState(s):
+            if (agent.where == object.where):
+                return True
     return False
-    # return s["Quim"].where == Location(6,4)
 
-def getCookiesInWorld(w:World) -> list[Object]:
-    cookies = []
-    for thing in w.state.values():
-        if (isinstance(thing, Object)):
-            cookies.append(thing)
-    return cookies
+# Returns a list of Objects in a state dictionary
+def getObjectsInState(s:State) -> list[Object]:
+    return getThingsInStateByType(s, Object)
 
+# Returns a list of Agents in a state dictionary
+def getAgentsInState(s:State) -> list[Agent]:
+    return getThingsInStateByType(s, Agent)
+
+# Returns a list of instances of type 't' in a state dictionary
+def getThingsInStateByType(s:State, t:type) -> list[object]:
+    things = []
+    for thing in s.values():
+        if (isinstance(thing, t)):
+            things.append(thing)
+    return things
+
+# Determines the shortest path that will make an agent collect all the cookies
 def findCookies(w:World) -> Path:
-    cookies = getCookiesInWorld(w)
+    cookies = getObjectsInState(w.state)
     finalPath = []
     while (cookies):
-        path = findGoal(w, IsCookieFound)
+        path = findGoal(w, IsCookieFound_Goal)
         finalPath = finalPath + path
         worlds = pathToWorlds(w, path)
         if (len(worlds) > 0):
             w = worlds[len(worlds)-1]
             print(path)
             PrintWorld(w)
-        cookies = getCookiesInWorld(w)
+        cookies = getObjectsInState(w.state)
     return finalPath
 
+def gatherWizards(w:World)->Path:
+    return None
 
 '''
 Print the world in the console
