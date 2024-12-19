@@ -56,6 +56,9 @@ class World:
 class PlayGroundError(Exception):
     pass
 
+class NoCookieProblemError(Exception):
+    pass
+
 Path = tuple[str,]
 
 directions = {'U':Location(0,1), 'D':Location(0,-1), 'L':Location(-1,0), 'R':Location(1,0)}
@@ -289,6 +292,8 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
             for dir in directions.keys():
                 nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
                 newLoc = Location(nx, ny)
+
+                # Adjust new location if it lands on a wormhole
                 if (checkBounds(w, newLoc)) and (w.ground.wormHoles[newLoc.xpos][newLoc.ypos] != None):
                     whEnd = w.ground.wormHoles[newLoc.xpos][newLoc.ypos]
                     newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
@@ -306,6 +311,37 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
         
     # If no path is found, raise exception
     raise PlayGroundError()
+
+
+def IsCookieFound(s:State)->bool:
+    agLoc = s["Quim"].where
+    for thing in s.values():
+        if (isinstance(thing, Object)) and (agLoc == thing.where):
+            return True
+    return False
+    # return s["Quim"].where == Location(6,4)
+
+def getCookiesInWorld(w:World) -> list[Object]:
+    cookies = []
+    for thing in w.state.values():
+        if (isinstance(thing, Object)):
+            cookies.append(thing)
+    return cookies
+
+def findCookies(w:World) -> Path:
+    cookies = getCookiesInWorld(w)
+    finalPath = []
+    while (cookies):
+        path = findGoal(w, IsCookieFound)
+        finalPath = finalPath + path
+        worlds = pathToWorlds(w, path)
+        if (len(worlds) > 0):
+            w = worlds[len(worlds)-1]
+            print(path)
+            PrintWorld(w)
+        cookies = getCookiesInWorld(w)
+    return finalPath
+
 
 '''
 Print the world in the console
@@ -346,24 +382,26 @@ w:World = newWorld("S",10,10)
 a = newAgent("Ze")
 b = newAgent("Quim")
 o = newObject("Maria")
+o1 = newObject("Sophie")
+o2 = newObject("Julie")
 
-putThing(w, a, Location(6,7))
+# putThing(w, a, Location(6,7))
 putThing(w, b, Location(2,4))
-# putThing(w, o, Location(1,1))
+putThing(w, o, Location(3,4))
+putThing(w, o1, Location(7,4))
+putThing(w, o2, Location(6,7))
 
 setComWing(w, Location(1,1), 8, 8)
-setWormhole(w, Location(3,4), Location(5,7))
-setWormhole(w, Location(5,4), Location(7,7))
+# setWormhole(w, Location(3,4), Location(5,7))
+# setWormhole(w, Location(5,4), Location(7,7))
 
 PrintWorld(w)
-wn = moveAgent(w, getAgent(w, "Quim"), "R")
-PrintWorld(wn)
-wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
-PrintWorld(wn)
-print(getAgent(wn, "Quim").where)
+# wn = moveAgent(w, getAgent(w, "Quim"), "R")
+# PrintWorld(wn)
+# wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
+# PrintWorld(wn)
+# print(getAgent(wn, "Quim").where)
 
-def g1(s:State)->bool:
-    return s["Quim"].where == Location(6,4)
 
-res = findGoal(w,g1)
+res = findCookies(w)
 print(res)
