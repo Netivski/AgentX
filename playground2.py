@@ -21,16 +21,16 @@ class Ground:
     width: int
     height: int
     space: LArray
-    wings: BoolGrid
-    wormHoles: LocationGrid
+    commonWing: BoolGrid
+    wormholes: LocationGrid
 
     def __init__(self, name:str, width:int, height:int):
         self.name = name
         self.width = width
         self.height = height
         self.space = [[0 for _ in range(self.height)] for _ in range(self.width)]
-        self.wings = [[False for _ in range(self.height)] for _ in range(self.width)]
-        self.wormHoles = [[None for _ in range(self.height)] for _ in range(self.width)]
+        self.commonWing = [[False for _ in range(self.height)] for _ in range(self.width)]
+        self.wormholes = [[None for _ in range(self.height)] for _ in range(self.width)]
 
 @dataclass
 class Object:
@@ -38,14 +38,7 @@ class Object:
     where: Location
     initialLocation: Location
 
-@dataclass
-class Agent:
-    name: str
-    where: Location
-    initialLocation: Location
-    objects: list[object]
-
-Thing = Agent | Object
+Thing = object
 State = dict[str, Thing]
 
 @dataclass
@@ -53,10 +46,26 @@ class World:
     ground: Ground
     state: State
 
+@dataclass
+class Agent:
+    name: str
+    where: Location
+    initialLocation: Location
+    objects: list[Object]
+    world: World
+
+    def isInWing(self) -> bool:
+        return self.world.ground.commonWing[self.where.xpos][self.where.ypos]
+
+Thing = Agent | Object
+
 class PlayGroundError(Exception):
     pass
 
 class NoCookieProblemError(Exception):
+    pass
+
+class NoGatheringProblemError(Exception):
     pass
 
 Path = tuple[str,]
@@ -70,14 +79,29 @@ def getStateByLocation(w: World) -> State:
         s[str(val.where)] = val
     return s
 
+def copyGround(src: Ground) -> Ground:
+    g = Ground(src.name, src.width, src.height)
+    for col in range(g.height):
+        for row in range(g.width):
+            g.space[row][col] = src.space[row][col]
+            g.commonWing[row][col] = src.commonWing[row][col]
+            if (src.wormholes[row][col] != None):
+                wh = src.wormholes[row][col]
+                g.wormholes[row][col] = Location(wh.xpos, wh.ypos)
+            else:
+                g.wormholes[row][col] = None
+    return g
+
 # Creates a copy of the world and a copy of all its agents and objects, keeping the same ground
 def copyWorld(src: World) -> World:
         w = newWorld(src.ground.name, src.ground.width, src.ground.height)
-        w.ground = src.ground
+        # w.ground = src.ground
+        w.ground = copyGround(src.ground)
 
         for thing in src.state.values():
             if (isinstance(thing, Agent)):
                 newThing = newAgent(thing.name)
+                newThing.world = w
                 for obj in thing.objects:
                     o = newObject(obj.name)
                     o.where = Location(obj.where.xpos, obj.where.ypos)
@@ -93,7 +117,7 @@ def copyWorld(src: World) -> World:
 def newAgent(name:str) -> Agent:
     if (not name.replace("_", "").isalnum()) or (len(name) == 0):
         raise PlayGroundError
-    return Agent(name,Location(0,0), None, [])
+    return Agent(name,Location(0,0), None, [], None)
 
 def newObject(name:str) -> Object:
     if (not name.replace("_", "").isalnum()) or (len(name) == 0):
@@ -122,7 +146,7 @@ def setComWing (w:World, loc: Location, width:int, height:int) -> None:
         raise PlayGroundError
     for i in range(loc.xpos, loc.xpos+width):
         for j in range(loc.ypos, loc.ypos+height):
-            w.ground.wings[i][j] = True
+            w.ground.commonWing[i][j] = True
 
 def setWormhole(w:World, loc1:Location, loc2:Location) -> None:
     # Ensure wormhole ends are at least 2 positions apart
@@ -132,7 +156,7 @@ def setWormhole(w:World, loc1:Location, loc2:Location) -> None:
     # Ensure wormhole ends are not adjacent to any other wormhole
     for dir in directions.values():
         for locToCheck in [Location(loc1.xpos + dir.xpos, loc1.ypos + dir.ypos), Location(loc2.xpos + dir.xpos, loc2.ypos + dir.ypos)]:
-            if (checkBounds(w, locToCheck) and w.ground.wormHoles[locToCheck.xpos][locToCheck.ypos] != None):
+            if (checkBounds(w, locToCheck) and w.ground.wormholes[locToCheck.xpos][locToCheck.ypos] != None):
                 raise PlayGroundError
     
     # Ensure wormhole ends don't land on any agent or object
@@ -141,8 +165,8 @@ def setWormhole(w:World, loc1:Location, loc2:Location) -> None:
             raise PlayGroundError
     
     # Add ends of the wormhole to the grid
-    w.ground.wormHoles[loc1.xpos][loc1.ypos] = loc2
-    w.ground.wormHoles[loc2.xpos][loc2.ypos] = loc1
+    w.ground.wormholes[loc1.xpos][loc1.ypos] = loc2
+    w.ground.wormholes[loc2.xpos][loc2.ypos] = loc1
 
 
 '''
@@ -171,6 +195,8 @@ def putThing (w:World, thing:Thing, loc:Location) -> Thing:
     w.state[thing.name] = thing
     thing.where = Location(loc.xpos, loc.ypos)
     thing.initialLocation = Location(loc.xpos, loc.ypos)
+    if (isinstance(thing, Agent)):
+        thing.world = w
     return thing
 
 def checkAltDiff(w:World, locA:Location, locB:Location):
@@ -194,20 +220,21 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
     if not(checkBounds(w, newLocation)):
         return None
 
-    if (w.ground.wormHoles[newLocation.xpos][newLocation.ypos] != None):
-        whEnd = w.ground.wormHoles[newLocation.xpos][newLocation.ypos]
+    if (w.ground.wormholes[newLocation.xpos][newLocation.ypos] != None):
+        whEnd = w.ground.wormholes[newLocation.xpos][newLocation.ypos]
         newLocation = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
 
     if not(checkBounds(w, newLocation)) or (checkAltDiff(w, newLocation, ag.initialLocation) > (len(ag.objects))):
         return None
     
-    if not(w.ground.wings[newLocation.xpos][newLocation.ypos]):
+    if not(w.ground.commonWing[newLocation.xpos][newLocation.ypos]):
         for val in w.state.values():
             if (newLocation == val.where):
                 raise PlayGroundError()
-
+        
     newWorld = copyWorld(w)
     newWorld.state[ag.name].where = newLocation
+    newWorld.state[ag.name].isInWing = w.ground.commonWing[newLocation.xpos][newLocation.ypos]
     return newWorld
 
 '''
@@ -264,19 +291,16 @@ Adaptation of what ChatGPT suggested as the BFS algorithm to the domain of the a
 Original algorithm can be found in bfs_algorithm.pt
 '''
 def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
-    rows, cols = w.ground.height, w.ground.width
     newWorld = copyWorld(w)
     stateByLoc = getStateByLocation(newWorld)
 
-    for ag in newWorld.state.values():
-        if not(isinstance(ag, Agent)):
-            continue
+    for ag in getAgentsInState(newWorld.state):
 
         start = Location(ag.where.xpos, ag.where.ypos)
 
         # Create a queue for BFS and a visited array
         queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
-        visited = [[False for _ in range(cols)] for _ in range(rows)]
+        visited = [[False for _ in range(newWorld.ground.height)] for _ in range(newWorld.ground.width)]
         visited[start.xpos][start.ypos] = True  # Mark the start as visited
 
         # Perform BFS
@@ -284,6 +308,7 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
             x, y, distance, path = queue.popleft()
             ag.where.xpos = x
             ag.where.ypos = y
+            
             # If we reached the destination, return the distance
             if goal(newWorld.state):
                 return path
@@ -294,9 +319,10 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
                 newLoc = Location(nx, ny)
 
                 # Adjust new location if it lands on a wormhole
-                if (checkBounds(w, newLoc)) and (w.ground.wormHoles[newLoc.xpos][newLoc.ypos] != None):
-                    whEnd = w.ground.wormHoles[newLoc.xpos][newLoc.ypos]
+                if (checkBounds(w, newLoc)) and (w.ground.wormholes[newLoc.xpos][newLoc.ypos] != None):
+                    whEnd = w.ground.wormholes[newLoc.xpos][newLoc.ypos]
                     newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
+                
                 if isValidMove(newWorld, ag, newLoc, visited):
                     visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
 
@@ -307,6 +333,7 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
                     else:
                         # Path to add should instruct agent to move 
                         pathToAdd = [dir + " " + ag.name]
+                    
                     queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
         
     # If no path is found, raise exception
@@ -338,7 +365,14 @@ def getThingsInStateByType(s:State, t:type) -> list[object]:
 
 # Determines the shortest path that will make an agent collect all the cookies
 def findCookies(w:World) -> Path:
+    if (w.ground.width * w.ground.height > 400):
+        raise NoCookieProblemError
+    agents = getAgentsInState(w.state)
+    if (len(agents) > 1):
+        raise NoCookieProblemError
     cookies = getObjectsInState(w.state)
+    if (not(1 <= len(cookies) <= 10)):
+        raise NoCookieProblemError
     finalPath = []
     while (cookies):
         path = findGoal(w, IsCookieFound_Goal)
@@ -351,8 +385,36 @@ def findCookies(w:World) -> Path:
         cookies = getObjectsInState(w.state)
     return finalPath
 
+
+# Checks if the only agent in the world is in a common wing
+def IsAgentInWing_Goal(s:State)->bool:
+    return getAgentsInState(s)[0].isInWing()
+
+
+def replaceOtherAgentsBySkyscrapper(w:World, currAgent:Agent):
+    agents = getAgentsInState(w.state)
+    for ag in agents:
+        if (ag == currAgent):
+            continue
+        w.ground.space[ag.where.xpos][ag.where.ypos] = 999999
+        w.state.pop(ag.name)
+
 def gatherWizards(w:World)->Path:
-    return None
+    if (w.ground.width * w.ground.height > 400):
+        raise NoGatheringProblemError
+    agents = getAgentsInState(w.state)
+    if (not(1 <= len(agents) <= 10)):
+        raise NoGatheringProblemError
+    cookies = getObjectsInState(w.state)
+    if (len(cookies) > 0):
+        raise NoGatheringProblemError
+    finalPath = []
+    for ag in getAgentsInState(w.state):
+        newWorld = copyWorld(w)
+        replaceOtherAgentsBySkyscrapper(newWorld, getAgent(newWorld, ag.name))
+        res = findGoal(newWorld, IsAgentInWing_Goal)
+        finalPath = finalPath + res
+    return finalPath
 
 '''
 Print the world in the console
@@ -363,23 +425,24 @@ Otherwise prints the altitude of the cell
 def PrintWorld(w: World):
     print()
     s = getStateByLocation(w)
-    for col in range(w.ground.width):
-        for row in range(w.ground.height):
+    for col in range(w.ground.height):
+        for row in range(w.ground.width):
             currLoc = Location(row, col)
             if (str(currLoc) in s.keys()):
                 if (isinstance(s[str(currLoc)],Agent)):
                     print("A", end="")
                 else:
                     print("X", end="")
-            elif (w.ground.wormHoles[currLoc.xpos][currLoc.ypos] != None):
+            elif (w.ground.wormholes[row][col] != None):
                 print("W", end="")
-            elif (w.ground.wings[currLoc.xpos][currLoc.ypos]):
+            elif (w.ground.commonWing[row][col]):
                 print(".", end="")
             else:
                 print (w.ground.space[row][col], end="")
         print()
     return
-    
+
+
 '''
 Testing area
 '''
@@ -390,19 +453,29 @@ def getObject(w:World,n:str)->Object:
     return cast(Object,w.state[n])
 
 w:World = newWorld("S",10,10)
+#PrintWorld(w)
 a = newAgent("Ze")
+putThing(w, a, Location(0,0))
+
 b = newAgent("Quim")
-o = newObject("Maria")
-o1 = newObject("Sophie")
-o2 = newObject("Julie")
+putThing(w, b, Location(3,3))
 
-# putThing(w, a, Location(6,7))
-putThing(w, b, Location(2,4))
-putThing(w, o, Location(3,4))
-putThing(w, o1, Location(7,4))
-putThing(w, o2, Location(6,7))
+c = newAgent("Tó")
+putThing(w, c, Location(0,9))
 
-setComWing(w, Location(1,1), 8, 8)
+d = newAgent("Manel")
+putThing(w, d, Location(9,9))
+
+# o = newObject("Maria")
+# o1 = newObject("Sophie")
+# o2 = newObject("Julie")
+
+# putThing(w, o, Location(3,4))
+# putThing(w, o1, Location(7,4))
+# putThing(w, o2, Location(7,7))
+
+setComWing(w, Location(4,4), 4, 4)
+setAltitude(w, Location(0,3), 1, 6, 9)
 # setWormhole(w, Location(3,4), Location(5,7))
 # setWormhole(w, Location(5,4), Location(7,7))
 
@@ -413,6 +486,10 @@ PrintWorld(w)
 # PrintWorld(wn)
 # print(getAgent(wn, "Quim").where)
 
-
-res = findCookies(w)
+res = gatherWizards(w)
 print(res)
+
+w2 = pathToWorlds(w, res)
+PrintWorld(w2[len(w2)-1])
+
+
