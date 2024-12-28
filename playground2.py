@@ -149,6 +149,10 @@ def setComWing (w:World, loc: Location, width:int, height:int) -> None:
             w.ground.commonWing[i][j] = True
 
 def setWormhole(w:World, loc1:Location, loc2:Location) -> None:
+
+    if (not (checkBounds(w, loc1)) or not (checkBounds(w, loc2))):
+        raise PlayGroundError
+    
     # Ensure wormhole ends are at least 2 positions apart
     if (abs(loc1.xpos-loc2.xpos) < 2 or abs(loc1.ypos-loc2.ypos) < 2):
         raise PlayGroundError
@@ -286,13 +290,12 @@ def isValidMove(w:World, ag:Agent, loc:Location, visited):
             return True
     return False
 
-'''
-Adaptation of what ChatGPT suggested as the BFS algorithm to the domain of the assignment
-Original algorithm can be found in bfs_algorithm.pt
-'''
+
 def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
+    
     newWorld = copyWorld(w)
     stateByLoc = getStateByLocation(newWorld)
+    counter = 0
 
     for ag in getAgentsInState(newWorld.state):
 
@@ -306,6 +309,9 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
         # Perform BFS
         while queue:
             x, y, distance, path = queue.popleft()
+            #print(counter)
+            print(path)
+            counter += 1
             ag.where.xpos = x
             ag.where.ypos = y
             
@@ -317,14 +323,16 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
             for dir in directions.keys():
                 nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
                 newLoc = Location(nx, ny)
-
+                isWormhole = False
                 # Adjust new location if it lands on a wormhole
                 if (checkBounds(w, newLoc)) and (w.ground.wormholes[newLoc.xpos][newLoc.ypos] != None):
                     whEnd = w.ground.wormholes[newLoc.xpos][newLoc.ypos]
                     newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
+                    isWormhole = True
                 
                 if isValidMove(newWorld, ag, newLoc, visited):
-                    visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
+                    # if (not isWormhole):
+                    #     visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
 
                     # Check to see if there's an Object in the neighbor cell
                     if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
@@ -333,11 +341,73 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
                     else:
                         # Path to add should instruct agent to move 
                         pathToAdd = [dir + " " + ag.name]
+                        if (not isWormhole):
+                            visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
                     
                     queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
         
     # If no path is found, raise exception
     raise PlayGroundError()
+
+
+'''
+Adaptation of what ChatGPT suggested as the BFS algorithm to the domain of the assignment
+Original algorithm can be found in bfs_algorithm.pt
+'''
+# def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
+#     goalFound = False
+#     newWorld = copyWorld(w)
+    
+#     for originalAgent in getAgentsInState(w.state):
+#         start = Location(originalAgent.where.xpos, originalAgent.where.ypos)
+
+#         # Create a queue for BFS and a visited array
+#         queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
+#         visited = [[False for _ in range(w.ground.height)] for _ in range(w.ground.width)]
+#         visited[start.xpos][start.ypos] = True  # Mark the start as visited
+
+#         # Perform BFS
+#         while queue:
+#             x, y, distance, path = queue.popleft()
+#             nwList = pathToWorlds(w, path)
+#             newWorld = nwList[len(nwList)-1]
+#             ag:Agent = newWorld.state[originalAgent.name]
+#             stateByLoc = getStateByLocation(newWorld)
+#             ag.where.xpos, ag.where.ypos = x, y
+            
+#             # If we reached the destination, return the distance
+#             if goal(newWorld.state):
+#                 goalFound = True
+#                 break
+            
+#             # Explore all 4 possible directions (up, down, left, right)
+#             for dir in directions.keys():
+#                 nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
+#                 newLoc = Location(nx, ny)
+
+#                 # Adjust new location if it lands on a wormhole
+#                 if (checkBounds(w, newLoc)) and (w.ground.wormholes[newLoc.xpos][newLoc.ypos] != None):
+#                     whEnd = w.ground.wormholes[newLoc.xpos][newLoc.ypos]
+#                     newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
+#                     #w.ground.wormholes[newLoc.xpos][newLoc.ypos]
+                
+#                 if isValidMove(newWorld, ag, newLoc, visited):
+#                     # Check to see if there's an Object in the neighbor cell
+#                     if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
+#                         # Path to add should instruct agent to pick object and then move 
+#                         pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name]# + [dir + " " + ag.name]
+#                         queue.append((x, y, distance, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
+#                     else:
+#                         # Path to add should instruct agent to move 
+#                         pathToAdd = [dir + " " + ag.name]
+#                         visited[newLoc.xpos][newLoc.ypos] = True
+#                         queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
+                    
+
+#     if (not goalFound):
+#         # If no path is found, raise exception 
+#         raise PlayGroundError()
+#     return path
 
 # Checks if there's any agent that has the same location as an object
 def IsCookieFound_Goal(s:State)->bool:
@@ -362,18 +432,26 @@ def getThingsInStateByType(s:State, t:type) -> list[object]:
         if (isinstance(thing, t)):
             things.append(thing)
     return things
+def validCookieMonster(w:World) -> bool:
+    if (w.ground.width * w.ground.height > 400):
+        return False
+    agents = getAgentsInState(w.state)
+    if (len(agents) > 1):
+        return False
+    cookies = getObjectsInState(w.state)
+    if (not(1 <= len(cookies) <= 10)):
+        return False
+    return True
+
+def CookieMonster(w:World) -> Path:
+    return findCookies(w)
 
 # Determines the shortest path that will make an agent collect all the cookies
 def findCookies(w:World) -> Path:
-    if (w.ground.width * w.ground.height > 400):
-        raise NoCookieProblemError
-    agents = getAgentsInState(w.state)
-    if (len(agents) > 1):
-        raise NoCookieProblemError
-    cookies = getObjectsInState(w.state)
-    if (not(1 <= len(cookies) <= 10)):
+    if (not validCookieMonster(w)):
         raise NoCookieProblemError
     finalPath = []
+    cookies = getObjectsInState(w.state)
     while (cookies):
         path = findGoal(w, IsCookieFound_Goal)
         finalPath = finalPath + path
@@ -408,12 +486,14 @@ def gatherWizards(w:World)->Path:
     cookies = getObjectsInState(w.state)
     if (len(cookies) > 0):
         raise NoGatheringProblemError
+    w = copyWorld(w)
     finalPath = []
     for ag in getAgentsInState(w.state):
         newWorld = copyWorld(w)
         replaceOtherAgentsBySkyscrapper(newWorld, getAgent(newWorld, ag.name))
         res = findGoal(newWorld, IsAgentInWing_Goal)
         finalPath = finalPath + res
+        w.state.pop(ag.name)
     return finalPath
 
 '''
@@ -446,50 +526,59 @@ def PrintWorld(w: World):
 '''
 Testing area
 '''
+# def g0(s:State)->bool:
+#     return cast(Agent, s["Ze"]).where == Location(2,0) and len(cast(Agent, s["Ze"]).objects) == 1
+
+
 def getAgent(w:World,n:str)->Agent:
     return cast(Agent,w.state[n])
 
 def getObject(w:World,n:str)->Object:
     return cast(Object,w.state[n])
 
-w:World = newWorld("S",10,10)
-#PrintWorld(w)
-a = newAgent("Ze")
-putThing(w, a, Location(0,0))
-
-b = newAgent("Quim")
-putThing(w, b, Location(3,3))
-
-c = newAgent("Tó")
-putThing(w, c, Location(0,9))
-
-d = newAgent("Manel")
-putThing(w, d, Location(9,9))
+# w:World = newWorld("S",3,1)
+# #PrintWorld(w)
+# a = newAgent("Ze")
+# putThing(w, a, Location(0,0))
 
 # o = newObject("Maria")
-# o1 = newObject("Sophie")
-# o2 = newObject("Julie")
+# putThing(w, o, Location(1,0))
 
-# putThing(w, o, Location(3,4))
-# putThing(w, o1, Location(7,4))
-# putThing(w, o2, Location(7,7))
+# PrintWorld(w)
 
-setComWing(w, Location(4,4), 4, 4)
-setAltitude(w, Location(0,3), 1, 6, 9)
-# setWormhole(w, Location(3,4), Location(5,7))
-# setWormhole(w, Location(5,4), Location(7,7))
+# res = findGoal(w, g0)
+# print(res)
 
-PrintWorld(w)
-# wn = moveAgent(w, getAgent(w, "Quim"), "R")
-# PrintWorld(wn)
-# wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
-# PrintWorld(wn)
-# print(getAgent(wn, "Quim").where)
+# b = newAgent("Quim")
+# putThing(w, b, Location(3,3))
 
-res = gatherWizards(w)
-print(res)
+# c = newAgent("Tó")
+# putThing(w, c, Location(0,9))
 
-w2 = pathToWorlds(w, res)
-PrintWorld(w2[len(w2)-1])
+# d = newAgent("Manel")
+# putThing(w, d, Location(9,9))
+
+# # o1 = newObject("Sophie")
+# # putThing(w, o1, Location(7,4))
+
+# # o2 = newObject("Julie")
+# # putThing(w, o2, Location(7,7))
+
+# setComWing(w, Location(4,4), 4, 4)
+# setAltitude(w, Location(0,3), 1, 6, 9)
+# # setWormhole(w, Location(3,4), Location(5,7))
+# # setWormhole(w, Location(5,4), Location(7,7))
+
+# # wn = moveAgent(w, getAgent(w, "Quim"), "R")
+# # PrintWorld(wn)
+# # wn = moveAgent(wn, getAgent(wn, "Quim"), "R")
+# # PrintWorld(wn)
+# # print(getAgent(wn, "Quim").where)
+
+# res = gatherWizards(w)
+# print(res)
+
+# w2 = pathToWorlds(w, res)
+# PrintWorld(w2[len(w2)-1])
 
 
