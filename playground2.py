@@ -345,129 +345,6 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
     
     raise PlayGroundError()
 
-
-def old_findGoal(w:World, goal:Callable [[State],bool]) -> Path:
-    
-    newWorld = copyWorld(w)
-    stateByLoc = getStateByLocation(newWorld)
-    counter = 0
-    queue = deque()
-
-    for ag in getAgentsInState(newWorld.state):
-
-        start = Location(ag.where.xpos, ag.where.ypos)
-
-        # Create a queue for BFS and a visited array
-        if (queue == None):
-            queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
-        else:
-            queue.append((start.xpos, start.ypos, 0, []))  # (x, y, distance, path)
-        visited = [[False for _ in range(newWorld.ground.height)] for _ in range(newWorld.ground.width)]
-        visited[start.xpos][start.ypos] = True  # Mark the start as visited
-
-        # Perform BFS
-        while queue:
-            x, y, distance, path = queue.popleft()
-            #print(counter)
-            print(path)
-            counter += 1
-            ag.where.xpos = x
-            ag.where.ypos = y
-            
-            # If we reached the destination, return the distance
-            if goal(newWorld.state):
-                return path
-            
-            # Explore all 4 possible directions (up, down, left, right)
-            for dir in directions.keys():
-                nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
-                newLoc = Location(nx, ny)
-                isWormhole = False
-                # Adjust new location if it lands on a wormhole
-                if (checkBounds(w, newLoc)) and (w.ground.wormholes[newLoc.xpos][newLoc.ypos] != None):
-                    whEnd = w.ground.wormholes[newLoc.xpos][newLoc.ypos]
-                    newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
-                    isWormhole = True
-                
-                if isValidMove(newWorld, ag, newLoc, visited):
-                    # if (not isWormhole):
-                    #     visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
-
-                    # Check to see if there's an Object in the neighbor cell
-                    if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
-                        # Path to add should instruct agent to pick object and then move 
-                        pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name] + [dir + " " + ag.name]
-                    else:
-                        # Path to add should instruct agent to move 
-                        pathToAdd = [dir + " " + ag.name]
-                        if (not isWormhole):
-                            visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
-                    
-                    queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
-            
-    # If no path is found, raise exception
-    raise PlayGroundError()
-
-
-'''
-Adaptation of what ChatGPT suggested as the BFS algorithm to the domain of the assignment
-Original algorithm can be found in bfs_algorithm.pt
-'''
-# def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
-#     goalFound = False
-#     newWorld = copyWorld(w)
-    
-#     for originalAgent in getAgentsInState(w.state):
-#         start = Location(originalAgent.where.xpos, originalAgent.where.ypos)
-
-#         # Create a queue for BFS and a visited array
-#         queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
-#         visited = [[False for _ in range(w.ground.height)] for _ in range(w.ground.width)]
-#         visited[start.xpos][start.ypos] = True  # Mark the start as visited
-
-#         # Perform BFS
-#         while queue:
-#             x, y, distance, path = queue.popleft()
-#             nwList = pathToWorlds(w, path)
-#             newWorld = nwList[len(nwList)-1]
-#             ag:Agent = newWorld.state[originalAgent.name]
-#             stateByLoc = getStateByLocation(newWorld)
-#             ag.where.xpos, ag.where.ypos = x, y
-            
-#             # If we reached the destination, return the distance
-#             if goal(newWorld.state):
-#                 goalFound = True
-#                 break
-            
-#             # Explore all 4 possible directions (up, down, left, right)
-#             for dir in directions.keys():
-#                 nx, ny = x + directions[dir].xpos, y + directions[dir].ypos
-#                 newLoc = Location(nx, ny)
-
-#                 # Adjust new location if it lands on a wormhole
-#                 if (checkBounds(w, newLoc)) and (w.ground.wormholes[newLoc.xpos][newLoc.ypos] != None):
-#                     whEnd = w.ground.wormholes[newLoc.xpos][newLoc.ypos]
-#                     newLoc = Location(whEnd.xpos + directions[dir].xpos, whEnd.ypos + directions[dir].ypos)
-#                     #w.ground.wormholes[newLoc.xpos][newLoc.ypos]
-                
-#                 if isValidMove(newWorld, ag, newLoc, visited):
-#                     # Check to see if there's an Object in the neighbor cell
-#                     if(str(newLoc) in stateByLoc.keys()) and (isinstance(stateByLoc[str(newLoc)], Object)):
-#                         # Path to add should instruct agent to pick object and then move 
-#                         pathToAdd = ["P " + ag.name + " " + stateByLoc[str(newLoc)].name]# + [dir + " " + ag.name]
-#                         queue.append((x, y, distance, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
-#                     else:
-#                         # Path to add should instruct agent to move 
-#                         pathToAdd = [dir + " " + ag.name]
-#                         visited[newLoc.xpos][newLoc.ypos] = True
-#                         queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
-                    
-
-#     if (not goalFound):
-#         # If no path is found, raise exception 
-#         raise PlayGroundError()
-#     return path
-
 # Checks if there's any agent that has the same location as an object
 def IsCookieFound_Goal(s:State)->bool:
     for agent in getAgentsInState(s):
@@ -585,20 +462,17 @@ def PrintWorld(w: World):
         print()
     return
 
-
-'''
-Testing area
-'''
-# def g0(s:State)->bool:
-#     return cast(Agent, s["Ze"]).where == Location(2,0) and len(cast(Agent, s["Ze"]).objects) == 1
-
-
 def getAgent(w:World,n:str)->Agent:
     return cast(Agent,w.state[n])
 
 def getObject(w:World,n:str)->Object:
     return cast(Object,w.state[n])
 
+'''
+Testing area
+'''
+# def g0(s:State)->bool:
+#     return cast(Agent, s["Ze"]).where == Location(2,0) and len(cast(Agent, s["Ze"]).objects) == 1
 
 
 # w = newWorld("Playground",3,3)
@@ -663,5 +537,3 @@ def getObject(w:World,n:str)->Object:
 
 # w2 = pathToWorlds(w, res)
 # PrintWorld(w2[len(w2)-1])
-
-
