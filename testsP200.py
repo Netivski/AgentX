@@ -131,7 +131,6 @@ class wormHolesTest(unittest.TestCase):
         setAltitude(w2,Location(4,5),2,1,0) 
         setAltitude(w2,Location(2,2),2,2,4) 
         setWormhole(w2,Location(1,1),Location(4,4))
-        PrintWorld(w2)
         solution = findGoal(w2,goalw201)
         lw = pathToWorlds(w2,solution)
         self.assertEqual(len(lw),13)
@@ -350,7 +349,6 @@ class WGTestsR(unittest.TestCase):
         robot4 = newAgent("robot4")
         putThing(w1,robot4,Location(5,5))
         setComWing(w1,Location(0,0),2,2)
-        PrintWorld(w1)
         res = gatherWizards(w1)
 #       findGoal
         sol = pathToWorlds(w1,res)

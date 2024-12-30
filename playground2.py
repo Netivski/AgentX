@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from queue import Queue
 from typing import Callable
 from typing import cast
 from collections import deque
@@ -33,12 +34,11 @@ class Ground:
         self.wormholes = [[None for _ in range(self.height)] for _ in range(self.width)]
 
 @dataclass
-class Object:
+class Thing:
     name: str
     where: Location
     initialLocation: Location
 
-Thing = object
 State = dict[str, Thing]
 
 @dataclass
@@ -47,17 +47,16 @@ class World:
     state: State
 
 @dataclass
-class Agent:
-    name: str
-    where: Location
-    initialLocation: Location
+class Object(Thing):
+    pass
+
+@dataclass
+class Agent(Thing):
     objects: list[Object]
     world: World
 
     def isInWing(self) -> bool:
         return self.world.ground.commonWing[self.where.xpos][self.where.ypos]
-
-Thing = Agent | Object
 
 class PlayGroundError(Exception):
     pass
@@ -238,7 +237,6 @@ def moveAgent (w:World, ag:Agent,dir:str)-> World|None:
         
     newWorld = copyWorld(w)
     newWorld.state[ag.name].where = newLocation
-    newWorld.state[ag.name].isInWing = w.ground.commonWing[newLocation.xpos][newLocation.ypos]
     return newWorld
 
 '''
@@ -250,7 +248,7 @@ def pickObject (w:World, ag: Agent , ob: Object)->World|None:
     if (ag.name in w.state.keys() and ob.name in w.state.keys() and isAdjacent(ag, ob)):
         if (checkAltDiff(w, ag.where, ob.where) == 0):
             newWorld = copyWorld(w)
-            newWorld.state[ag.name].objects.append(newWorld.state.pop(ob.name))
+            cast(Agent, newWorld.state[ag.name]).objects.append(newWorld.state.pop(ob.name))
             return newWorld
     return None
 
@@ -280,6 +278,25 @@ def pathToWorlds (w:World, path: Path) -> list [World]:
 
     return worlds
 
+def nextWorlds(w:World) -> list[tuple[str,World]]:
+    possibleWorlds = list()
+    for ag in getAgentsInState(w.state):
+        possiblePaths = ["U " + ag.name, "D " + ag.name, "L " + ag.name, "R " + ag.name]
+        for p in possiblePaths:
+            # for all posible actions in one world, appends actions and the the new world to list
+            try:
+                nextWorld = pathToWorlds(w, [p])
+                possibleWorlds.append([p, nextWorld[-1]])
+            except:
+                continue
+        for ob in getObjectsInState(w.state):
+            # if an object is found and adjacent, picks object
+            if isAdjacent(ag, ob):
+                nextWorld = pickObject(w, ag, ob)
+                if nextWorld != None:
+                    possibleWorlds.append(["P "+ ag.name +" "+ ob.name, nextWorld])
+    return possibleWorlds
+
 '''
 Check if location to visit is within bounds, was not visited yet and meets altitude requirements
 '''
@@ -290,19 +307,61 @@ def isValidMove(w:World, ag:Agent, loc:Location, visited):
             return True
     return False
 
+def getStateKey(s:State) -> str:
+    res = ""
+    for k in sorted(s.keys()):
+        res = res + k + "|" + str(s[k].where) + "|||"
+    return res
 
 def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
+    '''
+    Queue to store path and state needed to generate other worlds
+    Keep track of states already visited and to visit
+
+    For each element in queue:
+        generate new worlds and paths to get there
+        add to the queue current path and new path along with new state
+    '''
+    toVisit:Queue[tuple[Path, State, str]] = Queue()
+    stateKey = getStateKey(w.state)
+    toVisit.put(((), w.state, stateKey))
+
+    visited:set[str] = set([])
+    nextVisit:set[str] = set([])
+    nextVisit.add(stateKey)
+    
+    while toVisit.qsize() > 0:
+        (path, state, stateKey) = toVisit.get()
+        nextVisit.discard(stateKey)
+        if (goal(state)):
+            return path
+        visited.add(stateKey)
+        for (action, newWorld) in nextWorlds(World(w.ground, state)):
+            # Should only be done if state was not visited or not marked as to visit
+            newStateKey = getStateKey(newWorld.state)
+            if not(newStateKey in visited) and not(newStateKey in nextVisit): 
+                toVisit.put((path+(action,),newWorld.state, newStateKey))
+                nextVisit.add(newStateKey)
+    
+    raise PlayGroundError()
+
+
+def old_findGoal(w:World, goal:Callable [[State],bool]) -> Path:
     
     newWorld = copyWorld(w)
     stateByLoc = getStateByLocation(newWorld)
     counter = 0
+    queue = deque()
 
     for ag in getAgentsInState(newWorld.state):
 
         start = Location(ag.where.xpos, ag.where.ypos)
 
         # Create a queue for BFS and a visited array
-        queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
+        if (queue == None):
+            queue = deque([(start.xpos, start.ypos, 0, [])])  # (x, y, distance, path)
+        else:
+            queue.append((start.xpos, start.ypos, 0, []))  # (x, y, distance, path)
         visited = [[False for _ in range(newWorld.ground.height)] for _ in range(newWorld.ground.width)]
         visited[start.xpos][start.ypos] = True  # Mark the start as visited
 
@@ -345,7 +404,7 @@ def findGoal(w:World, goal:Callable [[State],bool]) -> Path:
                             visited[newLoc.xpos][newLoc.ypos] = True  # Mark the neighbor as visited
                     
                     queue.append((newLoc.xpos, newLoc.ypos, distance + 1, path + pathToAdd))  # Enqueue the neighbor with updated distance and path
-        
+            
     # If no path is found, raise exception
     raise PlayGroundError()
 
@@ -412,9 +471,11 @@ Original algorithm can be found in bfs_algorithm.pt
 # Checks if there's any agent that has the same location as an object
 def IsCookieFound_Goal(s:State)->bool:
     for agent in getAgentsInState(s):
-        for object in getObjectsInState(s):
-            if (agent.where == object.where):
-                return True
+        if (len(agent.objects) > 0):
+            return True
+        # for object in agent.objects:
+        #     if (agent.where == object.where):
+        #         return True
     return False
 
 # Returns a list of Objects in a state dictionary
@@ -426,12 +487,13 @@ def getAgentsInState(s:State) -> list[Agent]:
     return getThingsInStateByType(s, Agent)
 
 # Returns a list of instances of type 't' in a state dictionary
-def getThingsInStateByType(s:State, t:type) -> list[object]:
+def getThingsInStateByType(s:State, t:type) -> list[Thing]:
     things = []
     for thing in s.values():
         if (isinstance(thing, t)):
             things.append(thing)
     return things
+
 def validCookieMonster(w:World) -> bool:
     if (w.ground.width * w.ground.height > 400):
         return False
@@ -454,28 +516,30 @@ def findCookies(w:World) -> Path:
     cookies = getObjectsInState(w.state)
     while (cookies):
         path = findGoal(w, IsCookieFound_Goal)
-        finalPath = finalPath + path
+        getAgentsInState(w.state)[0].objects.clear()
+        finalPath.extend(path)
         worlds = pathToWorlds(w, path)
         if (len(worlds) > 0):
-            w = worlds[len(worlds)-1]
-            print(path)
-            PrintWorld(w)
+            w = worlds[-1]
         cookies = getObjectsInState(w.state)
     return finalPath
 
 
 # Checks if the only agent in the world is in a common wing
 def IsAgentInWing_Goal(s:State)->bool:
-    return getAgentsInState(s)[0].isInWing()
+    ag = getAgentsInState(s)[0]
+    return ag.isInWing()
 
 
-def replaceOtherAgentsBySkyscrapper(w:World, currAgent:Agent):
-    agents = getAgentsInState(w.state)
+def replaceOtherAgentsBySkyscrapper(w:World, agentName:str) -> World:
+    newWorld = copyWorld(w)
+    agents = getAgentsInState(newWorld.state)
     for ag in agents:
-        if (ag == currAgent):
+        if (ag.name == agentName):
             continue
-        w.ground.space[ag.where.xpos][ag.where.ypos] = 999999
-        w.state.pop(ag.name)
+        newWorld.ground.space[ag.where.xpos][ag.where.ypos] = 999999
+        newWorld.state.pop(ag.name)
+    return newWorld
 
 def gatherWizards(w:World)->Path:
     if (w.ground.width * w.ground.height > 400):
@@ -483,16 +547,15 @@ def gatherWizards(w:World)->Path:
     agents = getAgentsInState(w.state)
     if (not(1 <= len(agents) <= 10)):
         raise NoGatheringProblemError
-    cookies = getObjectsInState(w.state)
-    if (len(cookies) > 0):
+    objects = getObjectsInState(w.state)
+    if (len(objects) > 0):
         raise NoGatheringProblemError
     w = copyWorld(w)
     finalPath = []
-    for ag in getAgentsInState(w.state):
-        newWorld = copyWorld(w)
-        replaceOtherAgentsBySkyscrapper(newWorld, getAgent(newWorld, ag.name))
+    for ag in agents:
+        newWorld = replaceOtherAgentsBySkyscrapper(w, ag.name)
         res = findGoal(newWorld, IsAgentInWing_Goal)
-        finalPath = finalPath + res
+        finalPath.extend(res)
         w.state.pop(ag.name)
     return finalPath
 
@@ -536,6 +599,24 @@ def getAgent(w:World,n:str)->Agent:
 def getObject(w:World,n:str)->Object:
     return cast(Object,w.state[n])
 
+
+
+# w = newWorld("Playground",3,3)
+# robot1 = newAgent("CookieMonster")
+# putThing(w,robot1,Location(0,0))
+# box0 = newObject("box0")
+# putThing(w,box0,Location(1,1))
+# box1 = newObject("box1")
+# putThing(w,box1,Location(2,2))
+# # box2 = newObject("box2")
+# # putThing(w,box2,Location(1,7))
+# # box3 = newObject("box3")
+# # putThing(w,box3,Location(1,19))
+# # setAltitude(w,Location(3,0),2,11,9) ## check this
+# # setAltitude(w,Location(3,12),2,8,9) ## check this
+# print(CookieMonster(w))
+
+
 # w:World = newWorld("S",3,1)
 # #PrintWorld(w)
 # a = newAgent("Ze")
@@ -544,7 +625,9 @@ def getObject(w:World,n:str)->Object:
 # o = newObject("Maria")
 # putThing(w, o, Location(1,0))
 
-# PrintWorld(w)
+# print(getStateKey(w.state))
+
+#PrintWorld(w)
 
 # res = findGoal(w, g0)
 # print(res)
